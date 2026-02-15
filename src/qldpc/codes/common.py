@@ -262,7 +262,10 @@ class ClassicalCode(AbstractCode):
         """The same code with its parity matrix in reduced row echelon form."""
         matrix_rref = self.matrix.row_reduce()
         matrix_rref = matrix_rref[np.any(matrix_rref, axis=1), :]
-        return ClassicalCode(matrix_rref, self.field.order)
+        code = ClassicalCode(matrix_rref, self.field.order)
+        code._dimension = len(self) - len(matrix_rref)
+        code._distance = self._distance
+        return code
 
     def __len__(self) -> int:
         """The block length of this code."""
@@ -877,7 +880,11 @@ class QuditCode(AbstractCode):
         """The same code with its parity matrix in reduced row echelon form."""
         matrix_rref = self.matrix.row_reduce()
         matrix_rref = matrix_rref[np.any(matrix_rref, axis=1), :]
-        return QuditCode(matrix_rref, self.field.order, is_subsystem_code=self._is_subsystem_code)
+        code = QuditCode(matrix_rref, self.field.order, is_subsystem_code=self._is_subsystem_code)
+        if not self._is_subsystem_code:
+            code._dimension = len(code) - len(matrix_rref)
+        code._distance = self._distance
+        return code
 
     @staticmethod
     def matrix_to_graph(matrix: npt.NDArray[np.int_] | Sequence[Sequence[int]]) -> nx.DiGraph:
@@ -2126,11 +2133,17 @@ class CSSCode(QuditCode):
     @functools.cached_property
     def canonicalized(self) -> CSSCode:
         """The same code with its parity matrices in reduced row echelon form."""
-        return CSSCode(
+        code = CSSCode(
             self.code_x.canonicalized,
             self.code_z.canonicalized,
             is_subsystem_code=self._is_subsystem_code,
         )
+        if not self._is_subsystem_code:
+            code._dimension = len(self) - code.num_checks
+        code._distance = self._distance
+        code._distance_x = self._distance_x
+        code._distance_z = self._distance_z
+        return code
 
     @staticmethod
     def equiv(code_a: AbstractCode, code_b: AbstractCode) -> bool:
