@@ -134,7 +134,7 @@ class EdgeColoring(SyndromeMeasurementStrategy):
         for gates in color_to_ops.values():
             for gate, check_id, data_id in sorted(gates):
                 circuit.append(gate, [check_id, data_id])
-            circuit.append("TICK")  # add TICK to separate scheduled gate layers
+            circuit.append("TICK")  # separate scheduled gate layers
         return circuit
 
 
