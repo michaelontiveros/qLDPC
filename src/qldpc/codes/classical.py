@@ -24,6 +24,7 @@ import galois
 import networkx as nx
 import numpy as np
 import numpy.typing as npt
+import sympy
 
 from qldpc.abstract import DEFAULT_FIELD_ORDER
 
@@ -56,6 +57,35 @@ class RingCode(ClassicalCode):
 
         self._dimension = 1
         self._distance = bits
+
+
+class CyclicCode(ClassicalCode):
+    """Classical cyclic code.
+
+    A CyclicCode depends on an integer block length and an integer polynomial in one variable.
+    The parity check matrix is the polynomial evaluated at the circulant matrix with dimension equal to the block length.
+    If the polynomial is 1-x, the CyclicCode is a RingCode.
+    """
+
+    def __init__(self, bits: int, poly: sympy.Basic, field: int | None = None) -> None:
+        """Construct a cyclic code from a block length and a polynomial in one variable."""
+
+        if not isinstance(poly, sympy.Basic) or not poly.is_polynomial():
+            raise ValueError(f"The expression {poly} is not a polynomial.")
+        if not len(poly.free_symbols) == 1:
+            raise ValueError(f"The polynomial {poly} is not univariate.")
+
+        # Circulant matrix Q.
+        Id = galois.GF(field or DEFAULT_FIELD_ORDER).Identity(bits)
+        Q = Id[:, (np.arange(bits) - 1) % bits]
+
+        # poly(Q).
+        matrix = 0 * Id
+        for term in poly.as_terms()[0]:
+            coeff, exponent = term[1][0][0], term[1][1][0]
+            matrix += int(coeff) * np.linalg.matrix_power(Q, exponent)
+
+        super().__init__(matrix, field)
 
 
 class HammingCode(ClassicalCode):
