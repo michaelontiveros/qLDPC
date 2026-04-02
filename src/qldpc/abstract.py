@@ -509,7 +509,7 @@ class GroupRing:
         - square to themselves (they are idempotent),
         - commute with all other elements of the ring (they lie in the ring's center), and
         - cannot be decomposed into a sum of two nonzero orthogonal idempotents.
-        Two idempotents g, h are orthogonal if g * h = h * g 0.
+        Two idempotents g, h are orthogonal if g * h = h * g = 0.
 
         Intuitively, primitive central idempotents idempotents act like projectors onto orthogonal
         simple components of a ring.
