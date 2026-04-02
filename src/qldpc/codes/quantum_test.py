@@ -260,6 +260,23 @@ def test_hypergraph_product(
     code.set_logical_ops(code.get_logical_ops(), validate=True)
 
 
+def test_cyclic_hypergraph_product_codes() -> None:
+    """Reproduce Table 3 from arxiv:2511.09683."""
+
+    hgp_codes = {
+        (15, 1 + x + x**4): ((450, 32, 8), (240, 8, 8)),
+        (21, 1 + x + x**5): ((882, 50, 10), (420, 10, 10)),
+        (28, 1 + x**2 + x**4 + x**10): ((1568, 200, 6), (336, 20, 6)),
+        (21, 1 + x + x**3 + x**8): ((882, 98, 8), (336, 14, 8)),
+        (30, 1 + x + x**2 + x**7): ((1800, 72, 14), (840, 12, 14)),
+        (31, 1 + x + x**2 + x**6 + x**27): ((1922, 200, 10), (620, 20, 10)),
+        (31, 1 + x + x**3 + x**9 + x**10): ((1922, 200, 12), (744, 20, 12)),
+    }
+    for (bits, poly), (c2_params, cr_params) in hgp_codes.items():
+        assert codes.C2Code(bits, poly).get_code_params() == c2_params
+        assert codes.CRCode(bits, poly).get_code_params() == cr_params
+
+
 @pytest.mark.parametrize("field", [2, 3])
 def test_subsystem_hypergraph_product(
     pytestconfig: pytest.Config,
