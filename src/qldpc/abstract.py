@@ -430,6 +430,23 @@ class Group:
         generators = [gen.to_gap_cycles() for gen in self.generators]
         return f"Group({','.join(generators)})"
 
+    def eval(
+        self,
+        monomial: sympy.Integer | sympy.Symbol | sympy.Pow | sympy.Mul | int | np.int_,
+        symbols: dict[sympy.Symbol, GroupMember],
+    ) -> GroupMember:
+        """Convert a SymPy monomial into a member of group."""
+        coeff, exponents = get_coefficient_and_exponents(monomial)
+        if coeff != 1:
+            raise ValueError(
+                "Only monomials with a coefficient of 1 can be converted into a GroupMember"
+                f" (provided: {monomial})"
+            )
+        output = self.identity
+        for base, exponent in exponents:
+            output *= symbols[base] ** exponent
+        return output
+
 
 ################################################################################
 # group algebra and elements thereof
@@ -484,6 +501,11 @@ class GroupRing:
         """Is this ring semisimple?"""
         return bool(self.group.order % self.field.characteristic)
 
+    @property
+    def generators(self) -> list[RingMember]:
+        """Generators of this ring's base group."""
+        return [RingMember(self, gen) for gen in self.group.generators]
+
     def regular_lift(self, member: GroupMember) -> npt.NDArray[np.int_]:
         """Lift a group member to its regular representation."""
         return self.group.regular_lift(member)
@@ -509,7 +531,7 @@ class GroupRing:
         - square to themselves (they are idempotent),
         - commute with all other elements of the ring (they lie in the ring's center), and
         - cannot be decomposed into a sum of two nonzero orthogonal idempotents.
-        Two idempotents g, h are orthogonal if g * h = h * g 0.
+        Two idempotents g, h are orthogonal if g * h = h * g = 0.
 
         Intuitively, primitive central idempotents idempotents act like projectors onto orthogonal
         simple components of a ring.
@@ -535,6 +557,46 @@ class GroupRing:
             ]
             idempotents.append(RingMember(self, *terms))
         return tuple(idempotents)
+
+    def eval(
+        self, expression: sympy.Basic | int | np.int_, symbols: dict[sympy.Symbol, GroupMember]
+    ) -> RingMember:
+        """Convert a SymPy expression (such as a polynomial) into a member of this ring."""
+        if isinstance(expression, (sympy.Poly, sympy.Add)):
+            # evaluate this polynomial one monomial term at time
+            terms = sympy.Add.make_args(expression.as_expr())
+            evaluated_terms = [self.eval(term, symbols) for term in terms]
+            return functools.reduce(operator.add, evaluated_terms)
+
+        # helpful error message for invalid symbols
+        if any(not isinstance(value, GroupMember) for value in symbols.values()):
+            raise ValueError("The symbols passed to Ring.eval must be GroupMember-valued")
+
+        # if applicable, convert python integers into SymPy integers
+        if isinstance(expression, (int, np.int_)):
+            expression = sympy.Integer(expression)
+
+        # factor this term into its coefficient and variable content
+        _coeff, monomial = expression.as_coeff_Mul()
+        coeff: int | galois.FieldArray = int(_coeff)
+
+        # try to interpret coefficients with "invalid" but otherwise unambiguous values
+        if not 0 <= coeff < self.field.order:
+            if self.field.degree == 1:
+                # there is no ambiguity over prime number fields
+                coeff = int(coeff) % self.field.order
+            elif -self.field.order < coeff < 0:
+                # negative coefficients correspond to additive inverses
+                coeff = -self.field(-coeff)
+            else:
+                raise ValueError(
+                    f"The value of the coefficient {coeff} in expression {expression} is ambiguous"
+                    f" over the finite field GF({self.field.order})"
+                )
+
+        # construct and return a member of this ring
+        group_member = self.group.eval(monomial, symbols)
+        return RingMember(self, (coeff, group_member))
 
 
 class RingMember:
@@ -1220,17 +1282,19 @@ class SymmetricGroup(Group):
 class QuaternionGroup(Group):
     """Quaternion group: 1, i, j, k, -1, -i, -j, -k."""
 
+    # multiplication table for this group
+    _table = [
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        [1, 4, 3, 6, 5, 0, 7, 2],
+        [2, 7, 4, 1, 6, 3, 0, 5],
+        [3, 2, 5, 4, 7, 6, 1, 0],
+        [4, 5, 6, 7, 0, 1, 2, 3],
+        [5, 0, 7, 2, 1, 4, 3, 6],
+        [6, 3, 0, 5, 2, 7, 4, 1],
+        [7, 6, 1, 0, 3, 2, 5, 4],
+    ]
+
     def __init__(self) -> None:
-        table = [
-            [0, 1, 2, 3, 4, 5, 6, 7],
-            [1, 4, 3, 6, 5, 0, 7, 2],
-            [2, 7, 4, 1, 6, 3, 0, 5],
-            [3, 2, 5, 4, 7, 6, 1, 0],
-            [4, 5, 6, 7, 0, 1, 2, 3],
-            [5, 0, 7, 2, 1, 4, 3, 6],
-            [6, 3, 0, 5, 2, 7, 4, 1],
-            [7, 6, 1, 0, 3, 2, 5, 4],
-        ]
 
         def integer_lift(member: int) -> npt.NDArray[np.int_]:
             """Representation from https://en.wikipedia.org/wiki/Quaternion_group."""
@@ -1250,8 +1314,21 @@ class QuaternionGroup(Group):
                 blocks = [[zero, -imag], [-imag, zero]]
             return sign * (np.block(blocks).T % 3).view(galois.GF(3))
 
-        group = Group.from_table(table, integer_lift=integer_lift)
+        group = Group.from_table(self._table, integer_lift=integer_lift)
         super()._init_from_group(group, name=QuaternionGroup.__name__)
+
+    @property
+    def generators(self) -> list[GroupMember]:
+        """Generators of the quaternion group: [i, j]."""
+        return [GroupMember(self._table[1]), GroupMember(self._table[2])]
+
+    def generate(self) -> Iterator[GroupMember]:
+        """Iterate over all group members."""
+        ii, jj = self.generators
+        kk = ii * jj
+        one = self.identity
+        minus_one = ii * ii
+        yield from [one, ii, jj, kk, minus_one, minus_one * ii, minus_one * jj, minus_one * kk]
 
 
 class SmallGroup(Group):
@@ -1506,3 +1583,30 @@ class ProjectiveSpecialLinearGroup(Group):
 
 SL = SpecialLinearGroup
 PSL = ProjectiveSpecialLinearGroup
+
+
+################################################################################
+# miscellaneous helper methods that don't quite belong in qldpc.math
+
+
+def get_coefficient_and_exponents(
+    monomial: sympy.Integer | sympy.Symbol | sympy.Pow | sympy.Mul | int | np.int_,
+) -> tuple[int, list[tuple[sympy.Symbol, int]]]:
+    """Extract the coefficients and exponents in a SymPy monomial expression.
+
+    For example, this method takes 5 * x**3 * y**2 to (5, [(x, 3), (y, 2)]).
+    """
+    if isinstance(monomial, (sympy.Integer, int, np.int_)):
+        return int(monomial), []
+    coeff, monomial = monomial.as_coeff_Mul()
+    exponents = []
+    if isinstance(monomial, sympy.Symbol):
+        exponents.append((monomial, 1))
+    elif isinstance(monomial, sympy.Pow):
+        base, exponent = monomial.as_base_exp()
+        exponents.append((base, exponent))
+    elif isinstance(monomial, sympy.Mul):
+        for factor in monomial.args:
+            base, exponent = factor.as_base_exp()
+            exponents.append((base, exponent))
+    return int(coeff), exponents

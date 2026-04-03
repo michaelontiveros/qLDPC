@@ -17,20 +17,27 @@ limitations under the License.
 
 from __future__ import annotations
 
+import functools
 import itertools
 import math
+import operator
+import random
 import unittest.mock
 from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
 import pytest
+import sympy
 
 from qldpc import abstract
 
 
-def test_permutation_group() -> None:
+def test_permutation_group(pytestconfig: pytest.Config) -> None:
     """Permutation members and group construction."""
+    seed = pytestconfig.getoption("randomly_seed")
+    random.seed(seed)
+
     gens = [abstract.GroupMember(seq) for seq in ([0, 1, 2], [1, 2, 0], [2, 0, 1])]
     assert gens[0] < gens[1] < gens[2]
 
@@ -46,6 +53,19 @@ def test_permutation_group() -> None:
     gens = [abstract.GroupMember(seq) for seq in itertools.permutations([0, 1, 2])]
     group = abstract.Group(*gens)
     assert not group.is_abelian
+
+    random.shuffle(gens)
+    symbols = {sympy.Symbol(f"x_{ii}", commutative=False): gen for ii, gen in enumerate(gens)}
+    exponents = [random.randint(-3, 3) for _ in range(len(gens))]
+    monomial = functools.reduce(
+        operator.mul, [symbol**exponent for symbol, exponent in zip(symbols, exponents)]
+    )
+    member = functools.reduce(
+        operator.mul, [gen**exponent for gen, exponent in zip(gens, exponents)]
+    )
+    assert member == group.eval(monomial, symbols)
+    with pytest.raises(ValueError, match="Only monomials with a coefficient of 1"):
+        group.eval(5 * monomial, symbols)
 
     assert abstract.Group.from_generating_mats([[1]]) == abstract.CyclicGroup(1)
 
@@ -130,6 +150,12 @@ def test_random_symmetric_subset() -> None:
         group.random_symmetric_subset(size=0)
 
 
+def test_quaternion_group() -> None:
+    """Validate the multiplication table for the quaternion group."""
+    group = abstract.QuaternionGroup()
+    assert np.array_equal(group.table, group._table)
+
+
 def test_ring() -> None:
     """Construct elements of a group algebra."""
     group: abstract.Group
@@ -171,6 +197,28 @@ def test_ring() -> None:
     ring_member = abstract.RingMember(group, group.identity, *group.generators)
     assert ring_member.inverse() is None
 
+    # evaluate polynomials
+    group = abstract.QuaternionGroup()
+    ring = abstract.GroupRing(group, field=3)
+    g_i, g_j = group.generators
+    r_i, r_j = ring.generators
+    x_i = sympy.Symbol("x_i")
+    x_j = sympy.Symbol("x_j")
+    symbols = {x_i: g_i, x_j: g_j}
+    poly_r = 4 * r_i**2 - 2 * r_i * r_j + r_j
+    poly_x = 4 * x_i**2 - 2 * x_i * x_j + x_j
+    assert poly_r == ring.eval(poly_x, symbols)
+
+    wrong_symbols = {x_i: r_i, x_j: r_j}
+    with pytest.raises(ValueError, match="must be GroupMember-valued"):
+        ring.eval(1, wrong_symbols)  # type:ignore[arg-type]
+
+    # edge cases with non-prime number fields
+    ring = abstract.GroupRing(group, field=4)
+    assert ring.eval(-3, symbols) == -ring.eval(3, symbols)
+    with pytest.raises(ValueError, match="The value of the coefficient .* is ambiguous"):
+        ring.eval(5, symbols)
+
 
 def test_primitive_central_idempotents() -> None:
     """Convert external primitive central idempotents into RingMembers."""
@@ -197,8 +245,11 @@ def test_primitive_central_idempotents() -> None:
         assert all(idempotent == idempotent * idempotent for idempotent in idempotents)
 
 
-def test_ring_array() -> None:
+def test_ring_array(pytestconfig: pytest.Config) -> None:
     """Construct and lift a RingArray."""
+    seed = pytestconfig.getoption("randomly_seed")
+    np.random.seed(seed)
+
     int_matrix = np.random.randint(2, size=(3, 3))
     matrix = abstract.TrivialGroup.to_ring_array(int_matrix)
     assert matrix.group == abstract.TrivialGroup()
@@ -277,15 +328,18 @@ def test_ring_row_reduce(ring: abstract.GroupRing, pytestconfig: pytest.Config) 
     matrix: list[list[int | abstract.RingMember]] | abstract.RingArray
 
     one = ring.one
-    gen = ring.group.generators[0] * one
+    gen = ring.generators[0]
+    gen_inverse = gen.inverse()
+    assert gen_inverse is not None
+
     matrix = [
         [one + gen, gen],
         [gen + gen**2, gen**2],
         [0, one + gen],
     ]
     reduced_matrix = [
-        [gen.inverse() + one, one],
-        [-(one + gen) * (gen.inverse() + one), 0],
+        [gen_inverse + one, one],
+        [-(one + gen) * (gen_inverse + one), 0],
     ]
     assert np.array_equal(
         abstract.RingArray.build(matrix, ring).row_reduce(),
