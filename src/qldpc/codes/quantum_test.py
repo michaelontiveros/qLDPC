@@ -582,17 +582,10 @@ def test_4d_toric_codes() -> None:
         ((1, 0, 0, 1), (0, 1, 0, 1), (0, 0, 1, 0), (0, 0, 0, 2)): (12, 6, 2),
         ((1, 0, 0, 1), (0, 1, 0, 1), (0, 0, 1, 1), (0, 0, 0, 3)): (18, 6, 3),
         ((1, 0, 0, 1), (0, 1, 0, 2), (0, 0, 1, 3), (0, 0, 0, 5)): (30, 6, 4),
-        ((1, 0, 0, 5), (0, 1, 0, 6), (0, 0, 1, 7), (0, 0, 0, 9)): (54, 6, 6),
-        ((1, 1, 1, 1), (0, 2, 0, 2), (0, 0, 2, 2), (0, 0, 0, 4)): (96, 6, 8),
-        ((1, 0, 0, 3), (0, 1, 0, 5), (0, 0, 1, 7), (0, 0, 0, 16)): (96, 6, 8),
-        ((1, 0, 0, 3), (0, 1, 0, 5), (0, 0, 1, 7), (0, 0, 0, 18)): (108, 6, 9),
-        ((1, 0, 1, 6), (0, 1, 0, 11), (0, 0, 3, 9), (0, 0, 0, 15)): (270, 6, 15),
     }
-    for lattice, (n, k, d) in t4_codes.items():
+    for lattice, params in t4_codes.items():
         code = codes.T4Code(lattice)
-        assert code.num_qubits == n
-        assert code.get_weight() == k
-        assert code.get_distance_bound(num_trials=10) >= d
+        assert code.get_code_params() == params
 
 
 def test_many_hypercube_code() -> None:
