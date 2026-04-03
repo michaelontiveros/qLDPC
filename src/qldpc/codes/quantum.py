@@ -1186,21 +1186,31 @@ class HGPCode(CSSCode):
         )
 
 
-class C2Code(HGPCode):
-    """Symmetric cyclic hypergraph product code.
+class CHGPCode(HGPCode):
+    """Cyclic hypergraph product code.
 
-    A C2Code is a hypergraph square of a CyclicCode.
+    A CHGPCode is a hypergraph product of CyclicCodes.
 
     References:
-    - Definition 2 of https://arxiv.org/pdf/2511.09683
+    - Definitions 1,2 of https://arxiv.org/pdf/2511.09683
     """
 
-    def __init__(self, bits: int, poly: sympy.Basic, field: int | None = None) -> None:
-        """Construct a C2Code from a block length and a polynomial in one variable."""
+    def __init__(
+        self,
+        bits: tuple[int, int] | int,
+        poly_a: sympy.Basic,
+        poly_b: sympy.Basic | None = None,
+        field: int | None = None,
+    ) -> None:
+        """Construct a cyclic hypergraph product code from two block lengths and two polynomials in one variable,
+        or a symmetric cyclic hypergraph product code from one block length and one polynomial in one variable.
+        """
 
-        code = CyclicCode(bits, poly, field)
+        bits_a, bits_b = (bits, bits) if isinstance(bits, int) else bits
+        code_a = CyclicCode(bits_a, poly_a, field)
+        code_b = CyclicCode(bits_b, poly_b or poly_a, field)
 
-        super().__init__(code, code, field)
+        super().__init__(code_a, code_b, field)
 
 
 class CRCode(HGPCode):
